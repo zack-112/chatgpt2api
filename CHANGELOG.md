@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+## 3.2.4 - 2026-08-28
+
++ [新增] 前后端新增管理员主密钥修改功能：设置 → 基础设置 Tab 提供"当前密钥 / 新密钥 / 再次输入"三列表单，后端 `POST /api/admin/auth-key` 校验当前密钥、写回 `config.json` 并收紧权限；若当前密钥由 `CHATGPT2API_AUTH_KEY` 环境变量注入则给出清晰警告，避免写入后不生效。
++ [优化] 部署脚本 install.sh / docker-compose.yml / quick-deploy.sh 与 release URL 默认指向 `zack-112/chatgpt2api` 命名空间。
++ [版本] VERSION 与前端 package.json 升至 3.2.4，确保 entrypoint 的 `.chatgpt2api-image-version` marker 不一致时自动重拷贝 seed，解决旧部署升级后"代码文件未被替换"的问题。
+
+## 3.2.3 - 2026-08-28
+
++ [移除] 清空顶部菜单"交流与服务"中三项作者引流/售卖链接（QQ 交流群、购买生图账号、生图 API），空列表时自动隐藏"服务"按钮和移动端入口，不再出现广告入口。
++ [修复] AppShell.vue 中在线更新后的 reload 守卫从内存标志改为 `sessionStorage`，避免刷新循环导致页面无法使用（至多一次 reload 后停止）。
++ [版本] VERSION 与前端 package.json 升至 3.2.3，使 entrypoint marker 触发重拷贝，确保升级时前端/后端真实写入 runtime volume。
+
 ## 3.2.2 - 2026-08-11
 
 + [新增] 设置页新增控制台请求超时、图片首次轮询等待和图片轮询间隔，默认分别为 600 秒、5 秒和 5 秒。
