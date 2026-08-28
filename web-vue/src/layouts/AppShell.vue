@@ -1000,7 +1000,28 @@ const releasePageUrl = computed(() => updateStatus.value?.release_url || default
 const updateCheckingMessage = '正在检查云端版本...'
 const updateTaskPollIntervalMs = 1000
 let updateTaskPollTimer: number | null = null
-let updateReloadScheduled = false
+const updateReloadStorageKey = 'chatgpt2api.updateReloadedTag'
+
+// The reload-on-success guard must survive window.location.reload(); an in-memory
+// flag resets on every reload, so a version mismatch (e.g. a statically-deployed
+// bundle whose VERSION differs from the backend's persisted latest_tag) loops
+// forever. sessionStorage persists across reloads within the same browser
+// session, allowing at most one reload per target tag per session.
+function hasReloadedForUpdateTag(tag: string): boolean {
+  try {
+    return window.sessionStorage.getItem(updateReloadStorageKey) === tag
+  } catch {
+    return false
+  }
+}
+
+function markReloadedForUpdateTag(tag: string): void {
+  try {
+    window.sessionStorage.setItem(updateReloadStorageKey, tag)
+  } catch {
+    // sessionStorage may be unavailable (private mode / disabled); fall back to no-op.
+  }
+}
 const routeViewLoaders: Record<string, () => Promise<unknown>> = {
   '/': () => import('@/views/Dashboard.vue'),
   '/accounts': () => import('@/views/Accounts.vue'),
@@ -1275,12 +1296,12 @@ async function pollUpdateTask() {
     await checkForUpdates(false)
     const targetTag = normalizeVersionTag(task.latest_tag)
     if (
-      !updateReloadScheduled
+      !hasReloadedForUpdateTag(targetTag)
       && task.state === 'succeeded'
       && targetTag
       && normalizeVersionTag(localVersion) !== targetTag
     ) {
-      updateReloadScheduled = true
+      markReloadedForUpdateTag(targetTag)
       window.setTimeout(() => window.location.reload(), 400)
     }
   } catch {
