@@ -252,3 +252,27 @@ class SettingsMutationResult(_StrictModel):
     fields: dict[str, SettingsFieldMetadata]
     changed_fields: list[str] = Field(default_factory=list)
     restart_required: bool = False
+
+
+class ChangeAdminAuthKeyRequest(_StrictModel):
+    """管理员主密钥修改请求体。"""
+
+    current_key: str = Field(min_length=1, max_length=256)
+    new_key: str = Field(min_length=8, max_length=256)
+
+    @field_validator("new_key")
+    @classmethod
+    def _new_key_not_blank(cls, v: str) -> str:
+        if (v or "").strip() == "":
+            raise ValueError("新密钥不能为空字符串")
+        return v
+
+
+class ChangeAdminAuthKeyResult(_StrictModel):
+    """管理员主密钥修改结果。"""
+
+    success: bool
+    # True 表示当前运行的管理员密钥来自 CHATGPT2API_AUTH_KEY 环境变量，
+    # 此时即便写入 config.json 也不会生效，需要用户调整部署配置。
+    source_was_environment: bool = False
+    message: str

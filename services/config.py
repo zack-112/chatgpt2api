@@ -849,5 +849,56 @@ class ConfigStore:
             self._storage_backend = create_storage_backend(DATA_DIR)
         return self._storage_backend
 
+    def update_admin_auth_key(self, current_key: str, new_key: str) -> tuple[bool, bool, str]:
+        """修改管理员主密钥（写回 config.json）。
+
+        Returns:
+            (success, source_was_environment, message)
+            - success: 是否成功写入 config.json 并完成校验；
+            - source_was_environment: 当前运行密钥来自 env，config.json 的写入不会生效（需要用户调部署）；
+            - message: 可读提示文案，直接返给前端展示。
+        """
+        normalized_current = _normalize_auth_key(current_key)
+        normalized_new = _normalize_auth_key(new_key)
+        if normalized_current == "" or normalized_new == "":
+            raise ValueError("密钥不能为空。")
+        if len(normalized_new) < 8:
+            raise ValueError("新密钥至少 8 个字符。")
+
+        env_override_key = _normalize_auth_key(os.getenv("CHATGPT2API_AUTH_KEY"))
+        source_was_environment = env_override_key != ""
+
+        with self._lock:
+            # 1) 校验当前密钥：必须和正在生效的 auth_key 完全一致（即便是 env 注入的也要求用户拿正确值）
+            active_key = self.auth_key
+            if normalized_current != active_key:
+                raise ValueError("当前密钥不正确。")
+            if normalized_current == normalized_new:
+                raise ValueError("新密钥必须与当前密钥不同。")
+
+            # 2) 读现有 bootstrap，更新 auth-key，原子写回 + 权限收紧
+            bootstrap = read_json_object(self.path, name="config.json")
+            bootstrap["auth-key"] = normalized_new
+            write_json_file(self.path, bootstrap, backup=True)
+            try:
+                os.chmod(self.path, 0o600)
+            except OSError:
+                pass  # 某些只读挂载/卷不允许 chmod，不视为致命
+
+            # 3) 热刷新内存数据：auth_key property 始终走 config+env 重算，不用手动赋值；
+            #    但要保证下次读 path 时内容不是缓存，这里重刷 data 以防 reload_if_changed 因 mtime 延迟漏掉
+            self.data = self._load()
+            self._last_repository_refresh_at = monotonic()
+
+            # 4) 成功后，若用户使用 env 注入，给出清晰警告：写入成功但不生效
+            if source_was_environment:
+                message = (
+                    "已写入 config.json，但当前管理员密钥由环境变量 CHATGPT2API_AUTH_KEY 提供，"
+                    "优先级高于 config.json，修改暂未生效。请更新部署环境变量或在 docker-compose 中移除该变量后重启。"
+                )
+            else:
+                message = "管理员密钥已更新。请使用新密钥重新登录。"
+            return True, source_was_environment, message
+
 
 config = ConfigStore(CONFIG_FILE)

@@ -32,6 +32,8 @@ from contracts.proxy import (
     ProxyView,
 )
 from contracts.settings import (
+    ChangeAdminAuthKeyRequest,
+    ChangeAdminAuthKeyResult,
     PublicThirdPartyAppsView,
     SettingsMutationResult,
     SettingsPatch,
@@ -624,6 +626,28 @@ def create_router(app_version: str) -> APIRouter:
             result,
             target_free_mb=target_free_mb,
             dry_run=dry_run,
+        )
+
+    @router.post("/api/admin/auth-key", response_model=ChangeAdminAuthKeyResult)
+    async def change_admin_auth_key(
+        body: ChangeAdminAuthKeyRequest,
+        authorization: str | None = Header(default=None),
+    ):
+        require_admin(authorization)
+        try:
+            success, source_was_env, message = await run_in_threadpool(
+                config.update_admin_auth_key,
+                body.current_key,
+                body.new_key,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail={"error": str(exc)}) from exc
+        except OSError as exc:
+            raise HTTPException(status_code=500, detail={"error": _settings_write_error_message(exc)}) from exc
+        return ChangeAdminAuthKeyResult(
+            success=success,
+            source_was_environment=source_was_env,
+            message=message,
         )
 
     return router

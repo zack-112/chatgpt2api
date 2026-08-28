@@ -58,6 +58,17 @@ export interface AccountCleanupResult {
   auto_remove_rate_limited_accounts: boolean
 }
 
+export interface ChangeAdminAuthKeyResult {
+  success: boolean
+  source_was_environment: boolean
+  message: string
+}
+
+export interface ChangeAdminAuthKeyRequest {
+  current_key: string
+  new_key: string
+}
+
 export interface BackupState {
   running?: boolean
   last_status?: string
@@ -193,4 +204,7 @@ export const settingsApi = {
 
   runAccountCleanup: (payload: AccountCleanupRequest = {}) =>
     apiClient.post<AccountCleanupRequest, AccountCleanupResult>('/api/settings/account-cleanup/run', payload),
+
+  changeAdminAuthKey: (payload: ChangeAdminAuthKeyRequest) =>
+    apiClient.post<ChangeAdminAuthKeyRequest, ChangeAdminAuthKeyResult>('/api/admin/auth-key', payload),
 }

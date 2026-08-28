@@ -19,11 +19,85 @@
       <ConsoleSegmentedTabs v-model="activeSettingsTab" :options="settingsTabs" aria-label="设置分组" />
 
       <div v-if="activeSettingsTab === 'basic'" class="space-y-4">
-        <SurfaceBox density="compact">
-          <p class="text-xs leading-5 text-muted-foreground">
-            管理员登录密钥继续从部署配置读取，不在此页面展示；如需分发给其他人，请到“用户密钥”创建普通用户密钥。
-          </p>
-        </SurfaceBox>
+        <FormSection title="管理员登录密钥">
+          <template #subtitle>
+            修改后会立即写入配置并热生效；如果部署时通过
+            <code class="rounded bg-muted px-1 py-0.5 text-[0.9em]">CHATGPT2API_AUTH_KEY</code>
+            环境变量注入，页面会提示修改已写入但暂不生效，需要先调整部署配置。
+          </template>
+          <div class="grid gap-4 md:grid-cols-3">
+            <FormField label="当前密钥" required>
+              <input
+                v-model="adminCurrentKey"
+                :type="adminKeyInputType"
+                class="ui-input-sm font-mono tracking-wide"
+                autocomplete="current-password"
+                placeholder="请输入当前正在使用的管理员密钥"
+                :disabled="isUpdatingAdminAuthKey"
+              />
+            </FormField>
+            <FormField label="新密钥" required>
+              <template #label-extra>
+                <HelpTip text="至少 8 个字符，建议使用字母 + 数字 + 符号的组合。" />
+              </template>
+              <input
+                v-model="adminNewKey"
+                :type="adminKeyInputType"
+                class="ui-input-sm font-mono tracking-wide"
+                autocomplete="new-password"
+                placeholder="至少 8 位"
+                :disabled="isUpdatingAdminAuthKey"
+              />
+            </FormField>
+            <FormField label="再次输入新密钥" required>
+              <input
+                v-model="adminConfirmKey"
+                :type="adminKeyInputType"
+                class="ui-input-sm font-mono tracking-wide"
+                autocomplete="new-password"
+                placeholder="再次输入新密钥"
+                :disabled="isUpdatingAdminAuthKey"
+              />
+            </FormField>
+          </div>
+          <div class="mt-3 flex flex-wrap items-center gap-3">
+            <Button
+              size="sm"
+              variant="primary"
+              :disabled="isUpdatingAdminAuthKey || isSaving || settingsStore.isLoading"
+              @click="handleChangeAdminAuthKey"
+            >
+              {{ isUpdatingAdminAuthKey ? '修改中...' : '修改管理员密钥' }}
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              :disabled="isUpdatingAdminAuthKey"
+              @click="resetAdminAuthKeyForm"
+            >
+              清空
+            </Button>
+            <label class="ml-auto inline-flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
+              <input
+                type="checkbox"
+                class="h-3.5 w-3.5"
+                :checked="adminKeyInputType === 'text'"
+                :disabled="isUpdatingAdminAuthKey"
+                @change="
+                  adminKeyInputType =
+                    adminKeyInputType === 'text' ? 'password' : 'text'
+                "
+              />
+              显示明文
+            </label>
+          </div>
+          <SurfaceBox density="compact" class="mt-3">
+            <p class="text-xs leading-5 text-muted-foreground">
+              提示：如果只是想把密钥分发给他人使用，推荐在“用户密钥”Tab 创建普通用户密钥，
+              这样可以随时单独吊销而无需改管理员主密钥。
+            </p>
+          </SurfaceBox>
+        </FormSection>
 
         <div class="grid gap-4 xl:grid-cols-3">
           <div class="space-y-4 xl:col-span-2">
@@ -290,9 +364,10 @@
 </template>
 
 <script setup lang="ts">
-import { computed, defineAsyncComponent } from 'vue'
+import { computed, defineAsyncComponent, ref } from 'vue'
 import { Button, FormField, FormSection, HelpTip } from 'nanocat-ui'
 import { usePageRuntime } from '@/composables/usePageRuntime'
+import { useToast } from '@/composables/useToast'
 import ConsoleSegmentedTabs from '@/components/ai/ConsoleSegmentedTabs.vue'
 import ModalBody from '@/components/ai/ModalBody.vue'
 import ModalHeader from '@/components/ai/ModalHeader.vue'
@@ -304,6 +379,9 @@ import PageLoadingState from '@/components/ai/PageLoadingState.vue'
 import PagePanel from '@/components/ai/PagePanel.vue'
 import StateBlock from '@/components/ai/StateBlock.vue'
 import SurfaceBox from '@/components/ai/SurfaceBox.vue'
+import { useAuthStore } from '@/stores/auth'
+import { settingsApi } from '@/api/settings'
+import { errorMessage } from '@/lib/errorMessage'
 import {
   backupStatusText as buildBackupStatusText,
   settingsFieldReadOnly,
@@ -356,6 +434,66 @@ const hasUnsavedSettings = settingsConfigRuntime.hasUnsavedSettings
 const requireSavedSettings = settingsConfigRuntime.requireSavedSettings
 const reloadSettings = settingsConfigRuntime.reloadSettings
 const saveSettings = settingsConfigRuntime.handleSave
+
+// 管理员主密钥修改表单
+const adminCurrentKey = ref('')
+const adminNewKey = ref('')
+const adminConfirmKey = ref('')
+const isUpdatingAdminAuthKey = ref(false)
+const adminKeyInputType = ref<'password' | 'text'>('password')
+const toast = useToast()
+const authStore = useAuthStore()
+
+function resetAdminAuthKeyForm() {
+  adminCurrentKey.value = ''
+  adminNewKey.value = ''
+  adminConfirmKey.value = ''
+}
+
+async function handleChangeAdminAuthKey() {
+  if (!adminCurrentKey.value.trim()) {
+    toast.warning('请填写当前管理员密钥。')
+    return
+  }
+  if (adminNewKey.value.length < 8) {
+    toast.warning('新密钥至少 8 个字符。')
+    return
+  }
+  if (adminNewKey.value !== adminConfirmKey.value) {
+    toast.warning('两次输入的新密钥不一致。')
+    return
+  }
+  if (adminCurrentKey.value === adminNewKey.value) {
+    toast.warning('新密钥必须与当前密钥不同。')
+    return
+  }
+  isUpdatingAdminAuthKey.value = true
+  try {
+    const result = await settingsApi.changeAdminAuthKey({
+      current_key: adminCurrentKey.value,
+      new_key: adminNewKey.value,
+    })
+    resetAdminAuthKeyForm()
+    if (result.source_was_environment) {
+      // 写入成功但不生效（env 优先级高）：给警告，不清登录态
+      toast.warning(result.message || '修改已写入文件，但当前运行密钥来自环境变量，暂未生效。')
+      return
+    }
+    toast.success(result.message || '管理员密钥已更新，请重新登录。')
+    // 登出：清 token + 跳登录页，让用户用新密钥重新登录
+    try {
+      await authStore.logout()
+    } catch {
+      // logout 内部 catch 后 already clearIdentity，这里兜底跳一次
+    }
+    // 确保 hash 路由下跳到 /login
+    window.location.hash = '#/login'
+  } catch (error) {
+    toast.error(errorMessage(error, '修改管理员密钥失败'))
+  } finally {
+    isUpdatingAdminAuthKey.value = false
+  }
+}
 const backupRuntime = useSettingsBackupRuntime({
   runtime: pageRuntime,
   requestKey: BACKUPS_REQUEST_KEY,
