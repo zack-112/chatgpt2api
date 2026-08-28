@@ -242,7 +242,7 @@
                   </Button>
                 </Tooltip>
               </span>
-              <span class="hidden lg:inline-flex">
+              <span v-if="headerServiceItems.length" class="hidden lg:inline-flex">
                 <Tooltip text="交流与服务" placement="bottom">
                   <Button
                     size="sm"
@@ -957,27 +957,9 @@ type HeaderServiceItem = {
   icon: string
 }
 
-const headerServiceItems: HeaderServiceItem[] = [
-  {
-    key: 'service-qq',
-    label: 'QQ 交流群：1005859624',
-    href: 'https://qm.qq.com/q/yegwCqJisS',
-    icon: 'lucide:messages-square',
-  },
-  {
-    key: 'service-account',
-    label: '购买生图账号',
-    href: 'https://pay.ldxp.cn/shop/yukkcat',
-    icon: 'lucide:shopping-bag',
-  },
-  {
-    key: 'service-api',
-    label: '生图 API',
-    detail: '小量 ¥0.02/张 · 中转 ¥0.01/张 · 大量/企业 ¥0.009/张',
-    href: 'https://api.klong.lat',
-    icon: 'lucide:badge-dollar-sign',
-  },
-]
+// 清理了作者引流/售卖链接（QQ 群、购买账号、生图 API）。
+// 如果后续要添加官方服务渠道，在这里按 { key, label, detail?, href, icon } 追加即可。
+const headerServiceItems: HeaderServiceItem[] = []
 
 const mobileHeaderMenuItems = computed<ActionMenuItem[]>(() => {
   const items: ActionMenuItem[] = []
@@ -988,14 +970,16 @@ const mobileHeaderMenuItems = computed<ActionMenuItem[]>(() => {
       { key: 'updates', label: '版本更新' },
     )
   }
-  items.push({ key: 'services', label: '交流与服务', dividerBefore: items.length > 0 })
+  if (headerServiceItems.length) {
+    items.push({ key: 'services', label: '交流与服务', dividerBefore: items.length > 0 })
+  }
   return items
 })
 const routePendingText = computed(() => `正在加载${currentPageTitle.value}`)
 let systemThemeMedia: MediaQueryList | null = null
 let viewportMedia: MediaQueryList | null = null
 const prefetchedRoutePaths = new Set<string>()
-const defaultReleasePageUrl = 'https://github.com/yukkcat/chatgpt2api/releases'
+const defaultReleasePageUrl = 'https://github.com/zack-112/chatgpt2api/releases'
 const releasePageUrl = computed(() => updateStatus.value?.release_url || defaultReleasePageUrl)
 const updateCheckingMessage = '正在检查云端版本...'
 const updateTaskPollIntervalMs = 1000
